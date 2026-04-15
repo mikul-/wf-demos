@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
 """
-Parse Warfork .wfdz demo headers.
-Outputs tab-separated: filename\tmapname\tduration\trecorded\tfull_path
+Parse Warfork .wfdz demo headers and race finish times.
+
+Output (tab-separated):
+  filename  mapname  time_display  date  race_time  full_path
+
+  time_display  — race finish time if found (e.g. 0m32.529s),
+                  otherwise total demo duration prefixed with ~ (e.g. ~0m38s)
+  race_time     — race finish time for use in filenames, or empty string
 """
 import sys
 import os
+import re
 from datetime import datetime
+
+TAIL_SIZE = 32768   # bytes to read from end of file when searching for finish time
 
 
 def parse_header(path):
     try:
         with open(path, 'rb') as f:
             data = f.read(512)
-    except (IOError, OSError) as e:
+    except (IOError, OSError):
         return {}
 
-    # The header contains null-terminated key-value pairs starting at 'hostname'
     start = data.find(b'hostname\x00')
     if start == -1:
         return {}
@@ -33,11 +41,43 @@ def parse_header(path):
         val = data[pos:nv].decode('latin-1', errors='replace')
         result[key] = val
         pos = nv + 1
-        # Stop at padding (two consecutive nulls after a value)
         if pos < len(data) and data[pos:pos+1] == b'\x00':
             break
 
     return result
+
+
+def find_finish_time(path):
+    """
+    Search the end of the demo for a race finish time.
+    Returns a string like '0m32.529s' or None.
+    Warfork racemod sends: pr "^8End: ^7MM:SS.mmm ^8/ ..."
+    """
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(-min(TAIL_SIZE, size), 2)
+            tail = f.read()
+    except (IOError, OSError):
+        return None
+
+    # Strip Warfork color codes (^N where N is any character)
+    tail_clean = re.sub(rb'\^.', b'', tail)
+
+    match = re.search(rb'End: (\d{2}:\d{2}\.\d{3})', tail_clean)
+    if not match:
+        return None
+
+    time_str = match.group(1).decode('ascii')   # e.g. '00:32.529'
+    m = re.match(r'(\d+):(\d{2})\.(\d{3})', time_str)
+    if not m:
+        return None
+
+    mins = int(m.group(1))
+    secs = int(m.group(2))
+    ms   = m.group(3)
+    return f"{mins}m{secs:02d}.{ms}s"
 
 
 def fmt_duration(secs_str):
@@ -63,12 +103,17 @@ def main():
     for path in sys.argv[1:]:
         if not os.path.isfile(path):
             continue
-        info = parse_header(path)
-        fname    = os.path.basename(path)
-        mapname  = info.get('mapname', 'unknown')
-        duration = fmt_duration(info.get('duration', '0'))
-        date     = fmt_date(info.get('localtime', '0'))
-        print(f"{fname}\t{mapname}\t{duration}\t{date}\t{path}")
+        info       = parse_header(path)
+        fname      = os.path.basename(path)
+        mapname    = info.get('mapname', 'unknown')
+        duration   = fmt_duration(info.get('duration', '0'))
+        date       = fmt_date(info.get('localtime', '0'))
+        race_time  = find_finish_time(path)
+
+        # time_display: show race time when available, total duration otherwise
+        time_display = race_time if race_time else f"~{duration}"
+
+        print(f"{fname}\t{mapname}\t{time_display}\t{date}\t{race_time or ''}\t{path}")
 
 
 if __name__ == '__main__':

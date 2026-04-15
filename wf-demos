@@ -65,19 +65,24 @@ case "$cmd" in
         selection=$(python3 "$PARSER" "${demos[@]}" \
             | fzf --delimiter $'\t' \
                   --with-nth "1,2,3,4" \
-                  --header "slot           map                               duration  recorded" \
+                  --header "slot           map                               time      recorded" \
                   --prompt "Save demo > " \
                   --height "~50%") || true
         [[ -z "$selection" ]] && exit 0
 
         IFS=$'\t' read -ra fields <<< "$selection"
-        src="${fields[4]}"
+        src="${fields[5]}"
         mapname="${fields[1]//[^a-zA-Z0-9_-]/_}"
-        dur="${fields[2]}"
+        race_time="${fields[4]}"   # empty string if no finish time found
         dt="${fields[3]//-/}"
         ext=""
         [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
-        dest="${FAVORITES}/${mapname}_${dur}_${dt}${ext}"
+        # Use race time in filename if available; omit time component otherwise
+        if [[ -n "$race_time" ]]; then
+            dest="${FAVORITES}/${mapname}_${race_time}_${dt}${ext}"
+        else
+            dest="${FAVORITES}/${mapname}_${dt}${ext}"
+        fi
 
         if [[ -f "$dest" ]]; then
             echo "Already exists: $dest"
@@ -102,7 +107,7 @@ case "$cmd" in
                     | fzf --delimiter $'\t' \
                           --with-nth "1,2,3,4" \
                           --expect "ctrl-d" \
-                          --header "file                              map                          duration  recorded  (Enter=play, Ctrl-D=trash)" \
+                          --header "file                              map                          time      recorded  (Enter=play, Ctrl-D=trash)" \
                           --prompt "Favorites > " \
                           --height "~50%"
             ) || true
@@ -115,7 +120,7 @@ case "$cmd" in
             [[ -z "$selected" ]] && exit 0
 
             IFS=$'\t' read -ra fields <<< "$selected"
-            src="${fields[4]}"
+            src="${fields[5]}"
             fname="$(basename "$src")"
 
             if [[ "$key" == "ctrl-d" ]]; then
