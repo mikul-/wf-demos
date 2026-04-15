@@ -117,13 +117,12 @@ build_bind_lines() {
 join_bind_lines="$(build_bind_lines "$JOIN_BINDS_RAW" "vstr dslot_cmd")"
 pm_bind_lines="$(build_bind_lines "$PM_BINDS_RAW" "pm_stop")"
 
-cfg_content="// =============================================================
+cfg_content="// ── wf-demos BEGIN ─────────────────────────────────────────────────────
 // Demo auto-cycling — wf-demos system
 // join keys  = stop current demo + join server + start new slot
 // pm keys    = stop current demo + practice mode (no new recording)
 // Slot counter resets to 0 each time Warfork starts.
 // Manage demos with: wf-demos
-// =============================================================
 
 set dslot_cmd \"demo_slot_0\"
 
@@ -141,16 +140,18 @@ alias demo_slot_9 \"stop; join; record run_09; set dslot_cmd demo_slot_0; echo ^
 alias pm_stop \"stop; practicemode\"
 
 ${join_bind_lines}
-${pm_bind_lines}"
+${pm_bind_lines}
+// ── wf-demos END ───────────────────────────────────────────────────────"
 
 if [[ -f "$WF_CFG" ]]; then
     warn "Existing autoexec.cfg found."
     echo ""
-    echo "  1) Overwrite it (old file backed up)"
-    echo "  2) Print generated config (merge manually)"
-    echo "  3) Skip"
-    read -r -p "  → [1/2/3]: " cfg_choice
-    case "${cfg_choice:-1}" in
+    echo "  1) Overwrite   — replace entire file (old file backed up)"
+    echo "  2) Merge       — insert/replace only the wf-demos block, keep the rest"
+    echo "  3) Print only  — show generated config for manual merging"
+    echo "  4) Skip"
+    read -r -p "  → [1/2/3/4]: " cfg_choice
+    case "${cfg_choice:-2}" in
         1)
             backup="${WF_CFG}.bak.$(date +%Y%m%d%H%M%S)"
             cp "$WF_CFG" "$backup"
@@ -160,12 +161,53 @@ if [[ -f "$WF_CFG" ]]; then
             success "autoexec.cfg installed."
             ;;
         2)
-            echo ""
-            echo "──── generated autoexec.cfg ────"
-            echo "$cfg_content"
-            echo "────────────────────────────────"
-            echo "(also saved to /tmp/wf-demos-autoexec.cfg)"
             echo "$cfg_content" > /tmp/wf-demos-autoexec.cfg
+            backup="${WF_CFG}.bak.$(date +%Y%m%d%H%M%S)"
+            cp "$WF_CFG" "$backup"
+            success "Backed up: $backup"
+            python3 - "$WF_CFG" /tmp/wf-demos-autoexec.cfg <<'PYEOF'
+import sys, re
+
+existing_path = sys.argv[1]
+new_block_path = sys.argv[2]
+
+with open(existing_path) as f:
+    existing = f.read()
+with open(new_block_path) as f:
+    new_block = f.read().rstrip('\n')
+
+BEGIN = "// ── wf-demos BEGIN"
+END   = "// ── wf-demos END"
+
+if BEGIN in existing:
+    # Replace the marked block (handles re-installs cleanly)
+    result = re.sub(
+        r'// ── wf-demos BEGIN.*?// ── wf-demos END[^\n]*',
+        new_block,
+        existing,
+        flags=re.DOTALL
+    )
+elif 'set dslot_cmd' in existing or 'demo_slot_0' in existing:
+    # Old install without markers — append new block, leave old one in place
+    print("  Note: old wf-demos config found without markers. New block appended.")
+    print("  Remove the old block manually if needed.")
+    result = existing.rstrip('\n') + '\n\n' + new_block + '\n'
+else:
+    # Fresh file with other content — append
+    result = existing.rstrip('\n') + '\n\n' + new_block + '\n'
+
+with open(existing_path, 'w') as f:
+    f.write(result)
+PYEOF
+            success "autoexec.cfg merged."
+            ;;
+        3)
+            echo ""
+            echo "──── generated wf-demos block ────"
+            echo "$cfg_content"
+            echo "──────────────────────────────────"
+            echo "$cfg_content" > /tmp/wf-demos-autoexec.cfg
+            info "Saved to /tmp/wf-demos-autoexec.cfg"
             ;;
         *)
             warn "Skipped autoexec.cfg."
