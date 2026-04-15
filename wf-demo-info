@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""
+Parse Warfork .wfdz demo headers.
+Outputs tab-separated: filename\tmapname\tduration\trecorded\tfull_path
+"""
+import sys
+import os
+from datetime import datetime
+
+
+def parse_header(path):
+    try:
+        with open(path, 'rb') as f:
+            data = f.read(512)
+    except (IOError, OSError) as e:
+        return {}
+
+    # The header contains null-terminated key-value pairs starting at 'hostname'
+    start = data.find(b'hostname\x00')
+    if start == -1:
+        return {}
+
+    result, pos = {}, start
+    while pos < len(data):
+        nk = data.find(b'\x00', pos)
+        if nk <= pos:
+            break
+        key = data[pos:nk].decode('latin-1', errors='replace')
+        pos = nk + 1
+        nv = data.find(b'\x00', pos)
+        if nv == -1:
+            break
+        val = data[pos:nv].decode('latin-1', errors='replace')
+        result[key] = val
+        pos = nv + 1
+        # Stop at padding (two consecutive nulls after a value)
+        if pos < len(data) and data[pos:pos+1] == b'\x00':
+            break
+
+    return result
+
+
+def fmt_duration(secs_str):
+    try:
+        s = int(float(secs_str))
+    except (ValueError, TypeError):
+        return "?m??s"
+    return f"{s // 60}m{s % 60:02d}s"
+
+
+def fmt_date(ts_str):
+    try:
+        return datetime.fromtimestamp(int(ts_str)).strftime('%Y-%m-%d')
+    except (ValueError, TypeError, OSError):
+        return "unknown"
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: wf-demo-info <demo.wfdz22> [...]", file=sys.stderr)
+        sys.exit(1)
+
+    for path in sys.argv[1:]:
+        if not os.path.isfile(path):
+            continue
+        info = parse_header(path)
+        fname    = os.path.basename(path)
+        mapname  = info.get('mapname', 'unknown')
+        duration = fmt_duration(info.get('duration', '0'))
+        date     = fmt_date(info.get('localtime', '0'))
+        print(f"{fname}\t{mapname}\t{duration}\t{date}\t{path}")
+
+
+if __name__ == '__main__':
+    main()

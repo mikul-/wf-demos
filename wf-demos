@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# wf-demos — Warfork demo archive CLI
+# Requires: bash 4+, fzf, python3, steam
+# https://github.com/mikul-/wf-demos
+
+# ── Defaults ──────────────────────────────────────────────────────────────
+DEMO_DIR="${HOME}/.local/share/warfork-2.1/racemod_2.1/demos"
+ARCHIVE_DIR="${HOME}/demos"
+APPID=671610
+WF_MOD=racemod_2.1
+
+# ── Load user config (overrides defaults) ─────────────────────────────────
+CONFIG="${XDG_CONFIG_HOME:-${HOME}/.config}/wf-demos/config"
+# shellcheck source=/dev/null
+[[ -f "$CONFIG" ]] && source "$CONFIG"
+
+FAVORITES="${ARCHIVE_DIR}/favorites"
+TRASH="${ARCHIVE_DIR}/trash"
+
+# ── Locate parser ─────────────────────────────────────────────────────────
+# Prefer parser alongside this script (for running from the repo directly),
+# then fall back to ~/.local/bin.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$_SCRIPT_DIR/wf-demo-info" ]]; then
+    PARSER="$_SCRIPT_DIR/wf-demo-info"
+else
+    PARSER="${HOME}/.local/bin/wf-demo-info"
+fi
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+die() { echo "Error: $*" >&2; exit 1; }
+
+[[ -x "$PARSER" ]] || die "wf-demo-info not found. Run install.sh first."
+
+# ── Main ──────────────────────────────────────────────────────────────────
+cmd="${1:-menu}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+
+    # ── menu ──────────────────────────────────────────────────────────────
+    menu)
+        choice=$(printf 'save\nlist favorites\nclear temp' \
+            | fzf --prompt "wf-demos > " \
+                  --height "~30%" \
+                  --no-info) || true
+        [[ -z "$choice" ]] && exit 0
+        case "$choice" in
+            save)             exec "$0" save ;;
+            "list favorites") exec "$0" list ;;
+            "clear temp")     exec "$0" clear-temp ;;
+        esac
+        ;;
+
+    # ── save ──────────────────────────────────────────────────────────────
+    save)
+        mapfile -t demos < <(find "$DEMO_DIR" -maxdepth 1 -name 'run_*.wfdz*' -type f 2>/dev/null | sort)
+        if [[ ${#demos[@]} -eq 0 ]]; then
+            echo "No run_*.wfdz* demos found in $DEMO_DIR"
+            echo "Join a race server to start recording."
+            exit 1
+        fi
+        mkdir -p "$FAVORITES"
+
+        selection=$(python3 "$PARSER" "${demos[@]}" \
+            | fzf --delimiter $'\t' \
+                  --with-nth "1,2,3,4" \
+                  --header "slot           map                               duration  recorded" \
+                  --prompt "Save demo > " \
+                  --height "~50%") || true
+        [[ -z "$selection" ]] && exit 0
+
+        IFS=$'\t' read -ra fields <<< "$selection"
+        src="${fields[4]}"
+        mapname="${fields[1]//[^a-zA-Z0-9_-]/_}"
+        dur="${fields[2]}"
+        dt="${fields[3]//-/}"
+        ext=""
+        [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
+        dest="${FAVORITES}/${mapname}_${dur}_${dt}${ext}"
+
+        if [[ -f "$dest" ]]; then
+            echo "Already exists: $dest"
+            read -r -p "Overwrite? [y/N] " confirm
+            [[ "$confirm" != y ]] && exit 0
+        fi
+        cp "$src" "$dest"
+        echo "Saved: $dest"
+        ;;
+
+    # ── list ──────────────────────────────────────────────────────────────
+    list)
+        while true; do
+            mapfile -t favs < <(find "$FAVORITES" -maxdepth 1 -name '*.wfdz*' -type f 2>/dev/null | sort)
+            if [[ ${#favs[@]} -eq 0 ]]; then
+                echo "No favorites in $FAVORITES"
+                exit 0
+            fi
+
+            mapfile -t result < <(
+                python3 "$PARSER" "${favs[@]}" \
+                    | fzf --delimiter $'\t' \
+                          --with-nth "1,2,3,4" \
+                          --expect "ctrl-d" \
+                          --header "file                              map                          duration  recorded  (Enter=play, Ctrl-D=trash)" \
+                          --prompt "Favorites > " \
+                          --height "~50%"
+            ) || true
+
+            # fzf --expect outputs 2 lines: key pressed, selection.
+            # ESC produces no output → array length < 2.
+            [[ ${#result[@]} -lt 2 ]] && exit 0
+            key="${result[0]}"
+            selected="${result[1]}"
+            [[ -z "$selected" ]] && exit 0
+
+            IFS=$'\t' read -ra fields <<< "$selected"
+            src="${fields[4]}"
+            fname="$(basename "$src")"
+
+            if [[ "$key" == "ctrl-d" ]]; then
+                mkdir -p "$TRASH"
+                mv "$src" "$TRASH/$fname"
+                echo "Moved to trash: $fname"
+                continue    # reopen fzf with updated list
+            fi
+
+            # Enter → play
+            ext=""
+            [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
+            cp "$src" "${DEMO_DIR}/play_tmp${ext}"
+            echo "Playing: ${fields[0]}"
+            steam -applaunch "$APPID" +set fs_game "$WF_MOD" +demo play_tmp &
+            disown $!
+            exit 0
+        done
+        ;;
+
+    # ── clear-temp ────────────────────────────────────────────────────────
+    clear-temp)
+        mapfile -t trash_files < <(find "$TRASH" -maxdepth 1 -name '*.wfdz*' -type f 2>/dev/null | sort)
+        if [[ ${#trash_files[@]} -eq 0 ]]; then
+            echo "Trash is empty."
+            exit 0
+        fi
+        echo "Trash contents:"
+        for f in "${trash_files[@]}"; do
+            echo "  $(basename "$f")"
+        done
+        echo ""
+        read -r -p "Permanently delete ${#trash_files[@]} file(s)? [y/N] " confirm
+        if [[ "$confirm" == y ]]; then
+            rm "${trash_files[@]}"
+            echo "Trash cleared."
+        fi
+        ;;
+
+    # ── play ──────────────────────────────────────────────────────────────
+    play)
+        name="${1:-}"
+        if [[ -z "$name" ]]; then
+            echo "Usage: wf-demos play <slot>"
+            echo "  Rolling buffer slots: run_00 .. run_09"
+            exit 1
+        fi
+        # Strip any extension and leading demos/ prefix
+        name="${name%.wfdz*}"
+        name="${name#demos/}"
+        found=""
+        for f in "$DEMO_DIR/$name".wfdz*; do
+            [[ -f "$f" ]] && found="$f" && break
+        done
+        if [[ -z "$found" ]]; then
+            echo "Demo not found: $DEMO_DIR/$name.wfdz*"
+            exit 1
+        fi
+        echo "Playing: $name"
+        steam -applaunch "$APPID" +set fs_game "$WF_MOD" +demo "$name" &
+        disown $!
+        ;;
+
+    # ── help ──────────────────────────────────────────────────────────────
+    help|-h|--help)
+        cat <<'EOF'
+Usage: wf-demos [save|list|play <slot>|clear-temp]
+
+  wf-demos            interactive menu (save / list / clear temp)
+  wf-demos save       fzf-pick rolling buffer → favorites/
+  wf-demos list       fzf-browse favorites (Enter=play, Ctrl-D=trash)
+  wf-demos play N     play a rolling buffer slot directly (e.g. run_05)
+  wf-demos clear-temp permanently delete all files in trash/
+
+Config: ~/.config/wf-demos/config
+EOF
+        ;;
+
+    *)
+        echo "Unknown command: $cmd" >&2
+        exec "$0" help
+        exit 1
+        ;;
+esac
