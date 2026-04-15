@@ -62,9 +62,10 @@ case "$cmd" in
         fi
         mkdir -p "$FAVORITES"
 
-        selection=$(python3 "$PARSER" "${demos[@]}" \
+        # Pass only the 4 display columns to fzf — no hidden fields at all.
+        # fzf collapses consecutive tabs from empty fields, corrupting field indices.
+        selection=$(python3 "$PARSER" "${demos[@]}" | cut -f1-4 \
             | fzf --delimiter $'\t' \
-                  --with-nth "1,2,3,4" \
                   --header "slot           map                               time      recorded" \
                   --prompt "Save demo > " \
                   --height "~50%") || true
@@ -72,11 +73,9 @@ case "$cmd" in
 
         IFS=$'\t' read -ra fields <<< "$selection"
         mapname="${fields[1]//[^a-zA-Z0-9_-]/_}"
-        race_time="${fields[4]}"   # empty string if no finish time found
         dt="${fields[3]//-/}"
 
         # Resolve full path by matching filename against the demos array.
-        # Don't rely on fzf preserving hidden fields past --with-nth.
         src=""
         for f in "${demos[@]}"; do
             [[ "$(basename "$f")" == "${fields[0]}" ]] && src="$f" && break
@@ -85,9 +84,11 @@ case "$cmd" in
             echo "Error: could not find ${fields[0]} in $DEMO_DIR" >&2; exit 1
         fi
 
+        # Re-parse the selected file to get the race time reliably.
+        race_time=$(python3 "$PARSER" "$src" 2>/dev/null | cut -f5)
+
         ext=""
         [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
-        # Use race time in filename if available; omit time component otherwise
         if [[ -n "$race_time" ]]; then
             dest="${FAVORITES}/${mapname}_${race_time}_${dt}${ext}"
         else
@@ -113,9 +114,8 @@ case "$cmd" in
             fi
 
             mapfile -t result < <(
-                python3 "$PARSER" "${favs[@]}" \
+                python3 "$PARSER" "${favs[@]}" | cut -f1-4 \
                     | fzf --delimiter $'\t' \
-                          --with-nth "1,2,3,4" \
                           --expect "ctrl-d" \
                           --header "file                              map                          time      recorded  (Enter=play, Ctrl-D=trash)" \
                           --prompt "Favorites > " \
