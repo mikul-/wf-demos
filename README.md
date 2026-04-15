@@ -35,7 +35,7 @@ The installer will ask you:
 - **Warfork demos directory** — where Warfork stores `.wfdz*` files (default auto-detected)
 - **Archive directory** — where to keep `favorites/` and `trash/` (default: `~/demos`)
 - **Join keybinds** — keys that join the server and start a new recording slot (e.g. `4,F3`)
-- **Practice mode keybinds** — keys that stop recording but don't start a new slot (e.g. `1,F5,F11`)
+- **Practice mode keybinds** — keys that stop recording but don't start a new slot (e.g. `1,F5`)
 
 It then installs `~/.local/bin/wf-demos`, writes `~/.config/wf-demos/config`, and generates a custom `autoexec.cfg` for your Warfork mod directory.
 
@@ -65,7 +65,7 @@ The installer drops an `autoexec.cfg` into your Warfork mod directory. It sets u
 stop; join; record run_XX; (advance slot counter)
 ```
 
-**Practice mode key** (`1`, `F5`, `F11` by default):
+**Practice mode key** (`1`, `F5` by default):
 ```
 stop; practicemode
 ```
