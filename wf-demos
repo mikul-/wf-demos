@@ -71,10 +71,20 @@ case "$cmd" in
         [[ -z "$selection" ]] && exit 0
 
         IFS=$'\t' read -ra fields <<< "$selection"
-        src="${fields[5]}"
         mapname="${fields[1]//[^a-zA-Z0-9_-]/_}"
         race_time="${fields[4]}"   # empty string if no finish time found
         dt="${fields[3]//-/}"
+
+        # Resolve full path by matching filename against the demos array.
+        # Don't rely on fzf preserving hidden fields past --with-nth.
+        src=""
+        for f in "${demos[@]}"; do
+            [[ "$(basename "$f")" == "${fields[0]}" ]] && src="$f" && break
+        done
+        if [[ -z "$src" ]]; then
+            echo "Error: could not find ${fields[0]} in $DEMO_DIR" >&2; exit 1
+        fi
+
         ext=""
         [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
         # Use race time in filename if available; omit time component otherwise
@@ -120,7 +130,15 @@ case "$cmd" in
             [[ -z "$selected" ]] && exit 0
 
             IFS=$'\t' read -ra fields <<< "$selected"
-            src="${fields[5]}"
+
+            # Resolve full path by matching filename against the favs array.
+            src=""
+            for f in "${favs[@]}"; do
+                [[ "$(basename "$f")" == "${fields[0]}" ]] && src="$f" && break
+            done
+            if [[ -z "$src" ]]; then
+                echo "Error: could not find ${fields[0]}" >&2; continue
+            fi
             fname="$(basename "$src")"
 
             if [[ "$key" == "ctrl-d" ]]; then
