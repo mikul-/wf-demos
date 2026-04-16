@@ -84,15 +84,18 @@ case "$cmd" in
             echo "Error: could not find ${fields[0]} in $DEMO_DIR" >&2; exit 1
         fi
 
-        # Re-parse the selected file to get the race time reliably.
-        race_time=$(python3 "$PARSER" "$src" 2>/dev/null | cut -f5)
+        # Re-parse the selected file to get race time and player name reliably.
+        _info=$(python3 "$PARSER" "$src" 2>/dev/null)
+        race_time=$(echo "$_info" | cut -f5)
+        player=$(echo "$_info" | cut -f6 | tr -dc 'a-zA-Z0-9_-')
 
         ext=""
         [[ "$src" =~ (\.wfdz[a-zA-Z0-9_]*)$ ]] && ext="${BASH_REMATCH[1]}"
+        _prefix="${player:+${player}_}${mapname}"
         if [[ -n "$race_time" ]]; then
-            dest="${FAVORITES}/${mapname}_${race_time}_${dt}${ext}"
+            dest="${FAVORITES}/${_prefix}_${race_time}_${dt}${ext}"
         else
-            dest="${FAVORITES}/${mapname}_${dt}${ext}"
+            dest="${FAVORITES}/${_prefix}_${dt}${ext}"
         fi
 
         if [[ -f "$dest" ]]; then

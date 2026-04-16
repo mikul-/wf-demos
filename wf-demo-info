@@ -47,6 +47,19 @@ def parse_header(path):
     return result
 
 
+def find_player_name(path):
+    try:
+        with open(path, 'rb') as f:
+            data = f.read(65536)
+    except (IOError, OSError):
+        return None
+    match = re.search(rb'\\name\\([^\\"\x00]+)', data)
+    if not match:
+        return None
+    name = match.group(1).decode('latin-1', errors='replace')
+    return re.sub(r'\^.', '', name)
+
+
 def find_finish_time(path):
     """
     Search the end of the demo for a race finish time.
@@ -88,11 +101,19 @@ def fmt_duration(secs_str):
     return f"{s // 60}m{s % 60:02d}s"
 
 
-def fmt_date(ts_str):
+def fmt_date(ts_str, fallback_path=None):
     try:
-        return datetime.fromtimestamp(int(ts_str)).strftime('%Y-%m-%d')
+        ts = int(ts_str)
+        if ts > 0:
+            return datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
     except (ValueError, TypeError, OSError):
-        return "unknown"
+        pass
+    if fallback_path:
+        try:
+            return datetime.fromtimestamp(os.path.getmtime(fallback_path)).strftime('%Y-%m-%d')
+        except OSError:
+            pass
+    return "unknown"
 
 
 def main():
@@ -105,15 +126,16 @@ def main():
             continue
         info       = parse_header(path)
         fname      = os.path.basename(path)
-        mapname    = info.get('mapname', 'unknown')
+        mapname    = info.get('mapname') or os.path.splitext(os.path.basename(path))[0]
         duration   = fmt_duration(info.get('duration', '0'))
-        date       = fmt_date(info.get('localtime', '0'))
+        date       = fmt_date(info.get('localtime', '0'), fallback_path=path)
         race_time  = find_finish_time(path)
+        player     = find_player_name(path) or 'unknown'
 
         # time_display: show race time when available, total duration otherwise
         time_display = race_time if race_time else f"~{duration}"
 
-        print(f"{fname}\t{mapname}\t{time_display}\t{date}\t{race_time or ''}\t{path}")
+        print(f"{fname}\t{mapname}\t{time_display}\t{date}\t{race_time or ''}\t{player}\t{path}")
 
 
 if __name__ == '__main__':
