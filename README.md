@@ -17,6 +17,12 @@ Automatically cycles through a 10-slot rolling demo buffer when you join a serve
 
 ---
 
+## Contact
+
+**Discord:** [discord.gg/WpukHzTZVR](https://discord.gg/WpukHzTZVR) — join for support, questions, or to share runs.
+
+---
+
 ## Requirements
 
 ### Linux
