@@ -22,22 +22,31 @@ TAIL_SIZE = 32768
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-def _default_demo_dir():
+def _get_documents_folder():
+    """Return the real Documents folder via the Windows Shell API (handles relocated/renamed folders)."""
+    try:
+        import ctypes, ctypes.wintypes
+        buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+        ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf)  # CSIDL_PERSONAL = 5
+        p = Path(buf.value)
+        if p.exists():
+            return p
+    except Exception:
+        pass
     home = Path.home()
-    for sub in ("My Documents", "Documents"):
-        d = home / sub / "My Games" / "Warfork 2.1" / WF_MOD / "demos"
+    for sub in ("Documents", "My Documents"):
+        d = home / sub
         if d.exists():
             return d
-    return home / "My Documents" / "My Games" / "Warfork 2.1" / WF_MOD / "demos"
+    return home / "Documents"
+
+
+def _default_demo_dir():
+    return _get_documents_folder() / "My Games" / "Warfork 2.1" / WF_MOD / "demos"
 
 
 def _default_archive_dir():
-    home = Path.home()
-    for sub in ("My Documents", "Documents"):
-        d = home / sub
-        if d.exists():
-            return d / "wf-demos"
-    return home / "wf-demos"
+    return _get_documents_folder() / "wf-demos"
 
 
 def _config_path():
