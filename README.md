@@ -6,6 +6,7 @@ Automatically cycles through a 10-slot rolling demo buffer when you join a serve
 
 - **Linux** — `wf-demos` (bash), interactive picker powered by `fzf`
 - **Windows** — `wf-demos.py` / `wf-demos.bat` (Python), numbered terminal menu
+- **wf-rename.py** — standalone script to bulk-rename an existing folder of demos
 
 ## Features
 
@@ -183,6 +184,24 @@ WF_MOD=racemod_2.1
 | `Documents\My Games\Warfork 2.1\racemod_2.1\autoexec.cfg` | Auto-recording config (default path) |
 | `Documents\wf-demos\favorites\` | Saved demos |
 | `Documents\wf-demos\trash\` | Trashed demos (pending `clear-temp`) |
+
+---
+
+## wf-rename — bulk rename existing demos
+
+`wf-rename.py` is a standalone script (no install needed, works on Windows and Linux) that reads the header of every `.wfdz*` file in a folder and renames them to the standard format:
+
+```
+player_mapname_Xm00.000s_YYYYMMDD.wfdz22   (when race finish time is in the demo)
+player_mapname_YYYYMMDD.wfdz22             (fallback)
+```
+
+```
+python wf-rename.py [folder]          preview what would be renamed
+python wf-rename.py [folder] --apply  actually rename the files
+```
+
+If `[folder]` is omitted it uses the current directory. Nothing is renamed unless you pass `--apply`.
 
 ---
 
